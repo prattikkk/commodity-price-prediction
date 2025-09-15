@@ -1,60 +1,50 @@
-# AI-ML Price Predictor MVP
+# Price Predictor
 
-This is a Flask-based web application that predicts commodity prices using a hybrid ARIMA + SVM model.
+Simple Flask app that predicts Indian agri commodity prices using a hybrid ARIMA + SVM model. Includes a web UI and JSON API.
 
 ## Features
+- Web UI with commodity/district dropdowns and date selection
+- JSON API for programmatic access
+- Production-friendly (Waitress on Windows)
+- Dockerfile and basic CI workflow
 
-- Hybrid forecasting model combining ARIMA for trend and SVM for residual correction
-- REST API for price predictions
-- Supports multiple districts and commodities
-- Simple evaluation metrics
+## Quickstart (Local)
+1. Python 3.11
+2. Install dependencies
+   - python -m pip install --upgrade pip
+   - pip install -r requirements.txt
+3. Run
+   - Dev: python src/app.py
+   - Production-like: python serve_waitress.py
+4. Open http://127.0.0.1:5000
 
-## Setup
+## Web UI
+- Choose a commodity; districts list filters automatically.
+- Pick a date (defaults to today) and click Predict Price.
 
-1. Place dataset CSV in `data/raw/veg_prices.csv` (or run `python src/data_download.py`).
-2. Install dependencies: `pip install -r requirements.txt`
-3. Preprocess & inspect: `python src/preprocess.py`
-4. Train (example for PUNE): `python src/train.py`
-5. Run server: `python src/app.py`
-6. Test: `curl -X POST http://localhost:5000/predict -H "Content-Type:application/json" -d '{"commodity":"ONION","district":"PUNE","date":"2025-12-01"}'`
-
-## API Usage
-
+## JSON API
 POST /predict
 
-Request body:
-```json
-{
-  "commodity": "ONION",
-  "district": "PUNE",
-  "date": "2025-12-01"
-}
-```
+Headers: Content-Type: application/json
+Body:
+{"commodity":"ONION","district":"BANGALORE","date":"2025-06-15"}
 
-Response:
-```json
-{
-  "district": "PUNE",
-  "date": "2025-12-01",
-  "prediction": 45.67
-}
-```
+Other endpoints: GET /health, GET /pairs
 
-## Project Structure
+## Docker
+docker build -t price-predictor .
+docker run --rm -p 5000:5000 price-predictor
 
-```
-price-predictor/
-├── data/
-│   └── raw/                # Downloaded CSV(s)
-├── src/
-│   ├── data_download.py
-│   ├── preprocess.py
-│   ├── train.py
-│   ├── predict.py
-│   └── app.py
-├── models/
-│   └── <district>_arima.pkl
-│   └── <district>_svm.joblib
-├── requirements.txt
-└── README.md
-```
+Visit http://127.0.0.1:5000
+
+## CI
+Windows CI workflow at .github/workflows/ci.yml installs dependencies and runs basic smoke tests.
+
+## Structure
+- src/: Flask app, prediction logic, templates
+- models/: Trained model files
+- data/: Data folders
+- scripts/: Smoke tests
+
+## License
+MIT

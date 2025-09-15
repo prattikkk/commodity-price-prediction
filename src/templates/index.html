@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Price Predictor</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; background: #f7f8fa; }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { margin-bottom: 0.25rem; }
+    .muted { color: #666; margin-top: 0; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.25rem 1.5rem; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    form { display: grid; gap: 1rem; margin-top: 1rem; }
+    label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+    input, select, button { padding: 0.5rem 0.75rem; font-size: 1rem; }
+    button { cursor: pointer; background: linear-gradient(180deg,#0b74df,#0563bb); border: 1px solid #0557a7; color: #fff; border-radius: 8px; padding: 0.7rem 1rem; font-weight: 600; }
+    button:disabled { opacity: 0.7; cursor: not-allowed; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    footer { margin-top: 2rem; color: #666; font-size: 0.9rem; }
+    .pill { background:#eef4ff; color:#044; padding: 0.15rem 0.5rem; border-radius: 999px; margin-right: 0.25rem; display: inline-block; margin-bottom: 0.25rem; }
+    .tip { font-size: 0.9rem; color: #555; }
+    .row { display:flex; gap:1rem; align-items:center; }
+
+    /* Loader overlay */
+    .loader.hidden { display: none; }
+    .loader { position: fixed; inset: 0; background: rgba(255,255,255,0.75); display: grid; place-items: center; z-index: 50; }
+    .spinner { width: 42px; height: 42px; border: 5px solid #cfe3ff; border-top-color: #0563bb; border-radius: 50%; animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Indian Agricultural Price Predictor</h1>
+    <p class="muted">Hybrid ARIMA + SVM forecasting • Local demo</p>
+
+    <div class="card">
+    <form id="predict-form" action="{{ url_for('predict_ui') }}" method="post">
+      <div class="grid">
+        <div>
+          <label for="commodity">Commodity</label>
+          <select name="commodity" id="commodity" required>
+            <option value="" disabled selected>Select Commodity</option>
+          </select>
+        </div>
+        <div>
+          <label for="district">District</label>
+          <select name="district" id="district" required disabled>
+            <option value="" disabled selected>Select District</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div>
+          <label for="date">Prediction Date</label>
+          <input type="date" id="date" name="date" required />
+        </div>
+        <div>
+          <label for="forecast_days">Forecast Days</label>
+          <input type="number" id="forecast_days" name="forecast_days" value="7" min="1" max="30" />
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="submit-btn" type="submit">Predict Price</button>
+        <span class="tip">Choose a commodity first to see its districts.</span>
+      </div>
+    </form>
+    </div>
+
+    <h3>Available Model Pairs</h3>
+    <div>
+      {% for (c, d) in pairs[:40] %}
+        <span class="pill">{{ c }} · {{ d }}</span>
+      {% endfor %}
+      {% if pairs|length > 40 %}
+        <div class="muted">…and {{ pairs|length - 40 }} more</div>
+      {% endif %}
+    </div>
+
+    <footer>
+      <p>API endpoints: <code>GET /health</code>, <code>POST /predict</code></p>
+      <p class="tip">Tip: District options change based on the selected commodity.</p>
+    </footer>
+  </div>
+  <script type="application/json" id="pairs-data">{{ pairs_map | tojson }}</script>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      // Data provided by server for client filtering
+      const pairsDataEl = document.getElementById('pairs-data');
+      const PAIRS_MAP = pairsDataEl ? JSON.parse(pairsDataEl.textContent) : {};
+
+      const commodityEl = document.getElementById('commodity');
+      const districtEl = document.getElementById('district');
+      const dateEl = document.getElementById('date');
+      const formEl = document.getElementById('predict-form');
+      const submitBtn = document.getElementById('submit-btn');
+
+      function populateCommodities() {
+        const commodities = Object.keys(PAIRS_MAP).sort();
+        // Preserve placeholder as first option
+        commodityEl.innerHTML = ['<option value="" disabled selected>Select Commodity</option>'].concat(
+          commodities.map(c => `<option value="${c}">${c}</option>`)
+        ).join('');
+      }
+
+      function populateDistricts(commodity) {
+        const districts = (PAIRS_MAP[commodity] || []).slice();
+        if (!districts.length) {
+          districtEl.innerHTML = '<option value="" disabled selected>No districts available</option>';
+          districtEl.disabled = true;
+          return;
+        }
+        districtEl.innerHTML = ['<option value="" disabled selected>Select District</option>'].concat(
+          districts.map(d => `<option value="${d}">${d}</option>`)
+        ).join('');
+        districtEl.disabled = false;
+      }
+
+      function setDefaultDateToday() {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth()+1).padStart(2,'0');
+        const dd = String(today.getDate()).padStart(2,'0');
+        dateEl.value = `${yyyy}-${mm}-${dd}`;
+      }
+
+      commodityEl.addEventListener('change', (e) => {
+        populateDistricts(e.target.value);
+        // After choosing a commodity, ensure district select is enabled
+        if (districtEl.options.length > 1) {
+          districtEl.disabled = false;
+        }
+      });
+
+      // Loading indicator
+      const loader = document.createElement('div');
+      loader.className = 'loader hidden';
+      loader.innerHTML = '<div class="spinner" aria-label="Loading"></div>';
+      document.body.appendChild(loader);
+
+      function showLoader(show) {
+        if (show) {
+          loader.classList.remove('hidden');
+          // Important: don't disable inputs, otherwise they won't be submitted
+          submitBtn.disabled = true;
+        } else {
+          loader.classList.add('hidden');
+          submitBtn.disabled = false;
+        }
+      }
+
+      formEl.addEventListener('submit', (ev) => {
+        // Guard against submitting placeholders
+        if (!commodityEl.value || !districtEl.value || !dateEl.value) {
+          ev.preventDefault();
+          alert('Please select a commodity, district, and date.');
+          return;
+        }
+        // Simple UX feedback while navigating to result page
+        showLoader(true);
+      });
+
+      // init
+      populateCommodities();
+      // don't auto-populate districts until a commodity is chosen
+      setDefaultDateToday();
+    });
+  </script>
+</body>
+</html>
